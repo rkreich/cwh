@@ -291,6 +291,52 @@ class CloudWatchTest extends TestCase
         $handler->close();
     }
 
+    public function testFlushAfterInterval()
+    {
+        $this->prepareMocks();
+
+        $flushInterval = 2;
+        $batchSize = 1000;
+        $handler = new CloudWatchNotClosable(
+            $this->clientMock,
+            $this->groupName,
+            $this->streamName,
+            14,
+            $batchSize,
+            [],
+            Logger::DEBUG,
+            true,
+            $flushInterval);
+
+        $flushed = false;
+        $this
+            ->clientMock
+            ->expects($this->once())
+            ->method('PutLogEvents')
+            ->willReturnCallback(function () use (&$flushed) {
+                $flushed = true;
+                return $this->awsResultMock;
+            });
+
+        foreach ($this->getMultipleRecords() as $record) {
+            $handler->handle($record);
+        }
+
+        // no flush at this stage
+        $this->assertFalse($flushed);
+
+        sleep(3);
+
+        // interval has elapsed, writing another entry should trigger a flush
+        $handler->handle($this->getRecord(Logger::DEBUG, 'should trigger a flush'));
+        $this->assertTrue($flushed);
+
+        // additional records should not trigger additional flushes
+        foreach ($this->getMultipleRecords() as $record) {
+            $handler->handle($record);
+        }
+    }
+
     public function testFormatter()
     {
         $handler = $this->getCUT();
@@ -366,9 +412,9 @@ class CloudWatchTest extends TestCase
                 ->getMock();
     }
 
-    private function getCUT($batchSize = 1000)
+    private function getCUT($batchSize = 1000, $flushInterval = null)
     {
-        return new CloudWatch($this->clientMock, $this->groupName, $this->streamName, 14, $batchSize);
+        return new CloudWatch($this->clientMock, $this->groupName, $this->streamName, 14, $batchSize, [], Logger::DEBUG, true, $flushInterval);
     }
 
     /**

@@ -89,6 +89,16 @@ class CloudWatch extends AbstractProcessingHandler
     private $savedTime;
 
     /**
+     * @var int
+     */
+    private $flushInterval;
+
+    /**
+     * @var \DateTime
+     */
+    private $lastFlushTime;
+
+    /**
      * CloudWatchLogs constructor.
      * @param CloudWatchLogsClient $client
      *
@@ -108,6 +118,7 @@ class CloudWatch extends AbstractProcessingHandler
      * @param array $tags
      * @param int $level
      * @param bool $bubble
+     * @param int $flushInterval
      */
     public function __construct(
         CloudWatchLogsClient $client,
@@ -117,7 +128,8 @@ class CloudWatch extends AbstractProcessingHandler
         $batchSize = 10000,
         array $tags = [],
         $level = Logger::DEBUG,
-        $bubble = true
+        $bubble = true,
+        $flushInterval = null
     ) {
         if ($batchSize > 10000) {
             throw new \InvalidArgumentException('Batch size can not be greater than 10000');
@@ -129,6 +141,8 @@ class CloudWatch extends AbstractProcessingHandler
         $this->retention = $retention;
         $this->batchSize = $batchSize;
         $this->tags = $tags;
+        $this->flushInterval = $flushInterval;
+        $this->lastFlushTime = new \DateTime();
 
         parent::__construct($level, $bubble);
 
@@ -149,7 +163,10 @@ class CloudWatch extends AbstractProcessingHandler
 
             $this->addToBuffer($record);
 
-            if (count($this->buffer) >= $this->batchSize) {
+            $currentTime = new \DateTime();
+            $isTimeToFlush = $this->flushInterval
+                && $currentTime->getTimestamp() >= $this->lastFlushTime->getTimestamp() + $this->flushInterval;
+            if (count($this->buffer) >= $this->batchSize || $isTimeToFlush) {
                 $this->flushBuffer();
             }
         }
@@ -185,6 +202,8 @@ class CloudWatch extends AbstractProcessingHandler
 
             // clear data amount
             $this->currentDataAmount = 0;
+
+            $this->lastFlushTime->setTimestamp(time());
         }
     }
 
